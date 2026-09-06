@@ -1,0 +1,56 @@
+name: CI
+
+# Outer-loop safety net: re-runs the same mechanical checks the local
+# preToolUse hooks run (build, tests, secret scan), independent of
+# whether the change went through Copilot CLI at all. A commit made from
+# an editor's built-in git UI, or by a human with no AI tooling involved,
+# hits zero automated check without this — the local hooks alone are not
+# defense in depth.
+#
+# NOTE: unlike the rest of .github/, this file must be committed to have
+# any effect — GitHub Actions only runs workflows that exist on the
+# branch/PR being built. If your project is keeping all of .github/
+# untracked (see scripts/setup-project.sh), this file needs a deliberate
+# carve-out; see the .gitignore note there.
+#
+# Adjust the JDK version/distribution below to match your project.
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21" # adjust to match this project's target JDK
+
+      - name: Detect build tool and run build + tests
+        run: |
+          set -euo pipefail
+          if [[ -f "pom.xml" ]]; then
+            echo "Maven project detected"
+            mvn -B verify
+          elif [[ -f "build.gradle" || -f "build.gradle.kts" ]]; then
+            echo "Gradle project detected"
+            if [[ -x "./gradlew" ]]; then
+              ./gradlew check
+            else
+              gradle check
+            fi
+          else
+            echo "No pom.xml or build.gradle(.kts) found — nothing to build." >&2
+            exit 1
+          fi
+
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

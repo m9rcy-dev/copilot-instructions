@@ -1,0 +1,22 @@
+{
+  "hooks": {
+    "preToolUse": [
+      {
+        "matcher": { "tool": "shell" },
+        "command": "bash .github/hooks/scripts/scan-secrets-pretooluse.sh",
+        "description": "Fail-closed secret scan on `git commit` — blocks the commit (exit 2) if the staged diff matches a likely secret."
+      },
+      {
+        "matcher": { "tool": "shell" },
+        "command": "bash .github/hooks/scripts/quality-gate-pretooluse.sh",
+        "description": "Fail-closed build+test gate on `git commit` — runs the actual build/test command (Maven or Gradle) and blocks the commit (exit 2) if it fails."
+      }
+    ],
+    "sessionEnd": [
+      {
+        "command": "bash .github/hooks/scripts/scan-secrets-sessionend.sh",
+        "description": "Best-effort audit-log secret scan of the working tree at session end. Non-blocking backstop; the real gate is the preToolUse hook above."
+      }
+    ]
+  }
+}
