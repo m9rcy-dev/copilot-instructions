@@ -81,7 +81,10 @@ otherwise.
 - **Never run destructive git commands** — `reset --hard`, `checkout --`
   / `restore` over uncommitted work, `clean -fd`, `branch -D`, rewriting
   shared history — unless explicitly requested. Run `git status` first
-  and stash or ask before anything that could discard work.
+  and stash or ask before anything that could discard work. This is also
+  a hard gate, not just an instruction: `guard-tool.sh` (Tool Guardian,
+  `.github/hooks/`) blocks these at the shell level regardless of intent
+  — see "Definition of done" below.
 - **Never skip hooks or bypass checks** (`--no-verify`, disabling a
   pre-commit hook, bypassing signing) to force a commit or push through.
   If a hook fails, fix the underlying issue.
@@ -134,7 +137,11 @@ complete — yours or when reviewing someone else's — check all of these:
       all commits combined — complies with the instructions files.
 
 Automated parts of this (build, tests, secret scan) are enforced by the
-`preToolUse` git-commit hooks in `.github/hooks/`. The judgment-based
+`preToolUse` git-commit hooks in `.github/hooks/`, and destructive shell
+commands (`git reset --hard`, force pushes to `main`/`master`, `rm -rf`,
+etc.) are blocked on every shell call — not just at commit time — by the
+Tool Guardian `preToolUse` hook (`guard-tool.sh`) in the same directory.
+The judgment-based
 parts (docs quality, scope, SOLID) are what the `quality-gate` agent /
 `/validate` prompt checks — run it before considering non-trivial work
 done, not just before a PR. Right before opening a PR, also run

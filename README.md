@@ -53,6 +53,7 @@ repo's commits, local-only.
     scripts/
       scan-secrets-pretooluse.sh    # fail-closed secret gate on `git commit`
       quality-gate-pretooluse.sh    # fail-closed build+test gate on `git commit`
+      guard-tool.sh                 # fail-closed destructive-command gate on EVERY shell call (git reset --hard, rm -rf, etc.)
       scan-secrets-sessionend.sh    # best-effort audit log backstop
   workflows/
     ci.yml                          # outer loop — same checks, server-side, independent of local hooks
@@ -257,28 +258,57 @@ rather than the directory as a whole, specifically so this carve-out
 works — a plain `/.github/` pattern would block it, since git can't
 re-include a path nested inside an already-excluded parent directory.
 
-## Setting up the commit-time hooks
+## Setting up the preToolUse hooks
 
-Both `preToolUse` hooks reliably work in Copilot CLI / cloud agent; VS
-Code support is preview and JetBrains doesn't support hooks at all. A
+All three `preToolUse` hooks reliably work in Copilot CLI / cloud agent;
+VS Code support is preview and JetBrains doesn't support hooks at all. A
 commit made from an editor's own git UI, or from JetBrains, bypasses them
 entirely regardless — so don't treat them as the only gate; that's what
 the [outer-loop CI workflow](#outer-loop-ci-workflow) and the judgment-based
 review agents (`quality-gate`, `pre-pr-review`, `merge-review`) are for.
 
-- **`scan-secrets-pretooluse.sh`** prefers
+Two of the three only fire on `git commit`; the third — Tool Guardian —
+fires on every shell command, since destructive operations like
+`git reset --hard` or `rm -rf` aren't scoped to commit time at all:
+
+- **`scan-secrets-pretooluse.sh`** (on `git commit`) prefers
   [`gitleaks`](https://github.com/gitleaks/gitleaks) if installed
   (`brew install gitleaks`) and falls back to a small built-in regex set
   otherwise — install gitleaks for real coverage, the fallback is a
   backstop, not a replacement.
-- **`quality-gate-pretooluse.sh`** runs the project's actual build/test
-  command (`mvn verify` or `./gradlew check`, auto-detected) and blocks
-  the commit if it fails. This runs the full suite on every commit,
-  which can be slow — that's a deliberate fail-closed tradeoff; CI is
-  still the final authority regardless, this is a local backstop. If
-  neither `pom.xml` nor `build.gradle(.kts)` is found it passes through
-  with a warning rather than blocking, since it can't assume the build
-  layout.
+- **`quality-gate-pretooluse.sh`** (on `git commit`) runs the project's
+  actual build/test command (`mvn verify` or `./gradlew check`,
+  auto-detected) and blocks the commit if it fails. This runs the full
+  suite on every commit, which can be slow — that's a deliberate
+  fail-closed tradeoff; CI is still the final authority regardless, this
+  is a local backstop. If neither `pom.xml` nor `build.gradle(.kts)` is
+  found it passes through with a warning rather than blocking, since it
+  can't assume the build layout.
+- **`guard-tool.sh`** (Tool Guardian, every shell command) blocks
+  destructive commands before they run at all: `git reset --hard`,
+  `git push --force`/`-f` to `main`/`master`, `git clean -fd`, `rm -rf`
+  on `/`, `~`, `.`, `..`, `.env`, or `.git`, `DROP TABLE`/`DROP DATABASE`/
+  `TRUNCATE`/unconditional `DELETE FROM`, `chmod 777`/`chmod -R 777`,
+  `curl|bash`/`wget|sh`, `sudo`, and `npm publish`. Adapted from
+  [`github/awesome-copilot`'s tool-guardian hook](https://github.com/github/awesome-copilot/tree/main/hooks/tool-guardian)
+  (MIT licensed), with its stdin-parsing and block-signal changed to
+  match this repo's other two hooks (`.tool_input.command`, exit 2)
+  instead of upstream's own assumptions — see the comment at the top of
+  `guard-tool.sh` for why that matters.
+  - `GUARD_MODE=block` (default, set explicitly in `hooks.json`) blocks;
+    `GUARD_MODE=warn` logs the threat without blocking.
+  - `TOOL_GUARD_ALLOWLIST` (comma-separated substrings) skips scanning
+    for a matched command — e.g. set it in your shell environment if a
+    legitimate workflow in this repo needs `sudo` or a force-push to a
+    feature branch that happens to match a pattern.
+  - `SKIP_TOOL_GUARD=true` disables it entirely.
+  - Findings are logged to `.github/hooks/.audit-log/tool-guardian-<date>.log`
+    (same gitignored audit-log directory the secret scanner uses).
+  - Pattern-based, not semantic — it can't catch an obfuscated or
+    encoded destructive command, and a legitimate use of a matched
+    pattern needs the allowlist. It's a backstop against the common
+    case (an unintended `git reset --hard` or similar), not a complete
+    guarantee.
 
 ```bash
 chmod +x .github/hooks/scripts/*.sh   # already done in this template

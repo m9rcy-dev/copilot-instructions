@@ -10,6 +10,11 @@
         "matcher": { "tool": "shell" },
         "command": "bash .github/hooks/scripts/quality-gate-pretooluse.sh",
         "description": "Fail-closed build+test gate on `git commit` — runs the actual build/test command (Maven or Gradle) and blocks the commit (exit 2) if it fails."
+      },
+      {
+        "matcher": { "tool": "shell" },
+        "command": "GUARD_MODE=block bash .github/hooks/scripts/guard-tool.sh",
+        "description": "Fail-closed guard on EVERY shell command (not just `git commit`) — blocks (exit 2) destructive git ops (`git reset --hard`, force pushes to main/master, `git clean -fd`), `rm -rf`, DB drops/truncates, `chmod 777`, `curl|bash`, `sudo`, and similar high-risk patterns. Adapted from github/awesome-copilot's tool-guardian hook."
       }
     ],
     "sessionEnd": [
