@@ -47,3 +47,13 @@ something you can't get green after a genuine attempt (an environment
 limitation, a pre-existing failing test unrelated to your change, a
 requirement that's actually ambiguous), stop and explain rather than
 reporting done anyway.
+
+## Context hygiene
+
+After finishing each step of a multi-step plan (or at any other natural
+task boundary), briefly apply the `context-hygiene` skill's signals
+before continuing to the next step. If the session's gotten long or
+you're noticing drift (re-reading something you already read this
+session, re-deriving an earlier decision), say so and offer to
+checkpoint via `/checkpoint` rather than pushing on regardless — don't
+wait for the operator to notice degradation first.

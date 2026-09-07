@@ -5,8 +5,10 @@
 # you're adding this Copilot scaffold to), after copying .github/ and
 # docs/progress.md into it.
 #
-# It ensures `.github/` (EXCEPT `.github/workflows/`) and
-# `docs/progress.md` are excluded from that repo's commits:
+# It ensures `.github/` (EXCEPT `.github/workflows/`), `docs/progress.md`,
+# and its dated archives (`docs/progress.md.<timestamp>`, written by the
+# session-recovery skill's archiving step) are excluded from that repo's
+# commits:
 #   1. Updates .gitignore (creates it if missing, safe to re-run).
 #   2. Untracks any of those paths that were already `git add`ed or
 #      committed (`git rm --cached`) WITHOUT touching files on disk.
@@ -71,6 +73,7 @@ fi
 add_ignore_entry "/.github/*"
 add_ignore_entry "!/.github/workflows/"
 add_ignore_entry "/docs/progress.md"
+add_ignore_entry "/docs/progress.md.*"
 
 untrack_if_tracked() {
   local path="$1"
@@ -101,6 +104,10 @@ if [[ -d ".github" ]]; then
   done
 fi
 untrack_if_tracked "docs/progress.md"
+for archived in docs/progress.md.*; do
+  [[ -e "$archived" ]] || continue
+  untrack_if_tracked "$archived"
+done
 
 echo ""
 echo "Ensuring .github/workflows/ stays tracked (required for CI to run)..."

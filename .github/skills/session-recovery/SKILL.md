@@ -5,7 +5,9 @@ description: >-
   markers. Use at the start of any session on a multi-step task to check
   for in-progress work before starting fresh, and periodically during long
   or multi-session work to checkpoint progress so a crashed/context-reset
-  session can resume without re-deriving what's already been done.
+  session can resume without re-deriving what's already been done. Also
+  covers archiving docs/progress.md to a dated file once completed-task
+  history piles up, so the active file stays small.
 ---
 
 # Session recovery via docs/progress.md
@@ -65,6 +67,39 @@ verified vs. assumed, and any gotchas.
 
 ## On task completion
 
-Replace the `RESUME_POINT` entry with a brief completed-summary line (or
-remove it if `docs/progress.md` is per-task and the task is fully done) so
-stale resume points don't accumulate and mislead future sessions.
+Collapse the `RESUME_POINT` entry into a brief, dated one-line "done"
+summary (e.g. `- 2026-09-06: Migrated card-token storage to vault-backed
+tokenization.`) in place of the full entry, so stale in-progress detail
+doesn't accumulate and mislead future sessions. Newest at the top, same
+as `RESUME_POINT`s.
+
+## Archiving (prevent unbounded growth)
+
+`docs/progress.md` is meant to hold only the *current* window of work,
+not a running history — even one-line completed summaries pile up
+indefinitely otherwise, and a long file is exactly the kind of
+accumulated context the `context-hygiene` skill warns against reading
+in full every session.
+
+After collapsing a completed task into a one-line summary (above), count
+how many completed one-line summaries are now sitting in
+`docs/progress.md`. Once that count reaches **2** (i.e. two full plans'
+worth of completed history accumulated — adjust this threshold if the
+operator asks for a different cadence), archive instead of leaving a
+third:
+
+1. Copy the *current full contents* of `docs/progress.md` (including the
+   summary you just added) to `docs/progress.md.<UTC timestamp>`, using
+   `YYYY-MM-DDTHH-MM-SSZ` format with colons replaced by `-` so it's a
+   valid filename — e.g. `docs/progress.md.2026-09-07T14-30-00Z`. This
+   preserves the history rather than discarding it.
+2. Overwrite `docs/progress.md` back to the empty template
+   (`_No active work in progress._`, no completed summaries carried
+   forward) — a clean slate, not a reference to the archive file.
+3. Mention the archive filename in your summary to the operator, so they
+   know where the prior history went if they need to look something up
+   later.
+
+Only archive at this point — right after a task completes and the file
+would otherwise cross the threshold. Never archive out from under an
+active `RESUME_POINT`; a session mid-task always wins over pruning.

@@ -17,6 +17,7 @@ repo's commits, local-only.
     security.instructions.md       # applyTo payment/card/auth/pci packages
   prompts/
     plan.prompt.md                 # /plan — write a phased plan before touching code
+    plan-from-jira.prompt.md       # /plan-from-jira — read a ticket, clarify with the operator, then plan
     new-endpoint.prompt.md         # /new-endpoint
     validate.prompt.md             # /validate — Definition of Done check
     security-review.prompt.md      # /security-review
@@ -24,10 +25,13 @@ repo's commits, local-only.
     pr-feedback.prompt.md          # /pr-feedback — address reviewer comments, re-validate
     merge-review.prompt.md         # /merge-review — arms-length check before merge to main/master
     document-architecture.prompt.md # /document-architecture — architecture.md, detailed designs, ADRs
+    summarize-for-confluence.prompt.md # /summarize-for-confluence — condense a doc into a Confluence-ready page
     retro.prompt.md                # /retro — propose an instructions-file fix after an escaped bug
     session-resume.prompt.md       # /session-resume
+    checkpoint.prompt.md           # /checkpoint — write a RESUME_POINT and recommend a fresh chat if the session's gotten heavy
   agents/
     planner.agent.md               # @planner — read-only, produces a phased plan (also backs /retro)
+    jira-planner.agent.md          # @jira-planner — read-only, Jira intake + brainstorm/clarify gate, then plans
     java-pair.agent.md             # @java-pair — default dev persona, implements, self-corrects
     quality-gate.agent.md          # @quality-gate — read-only, Definition of Done check
     security-reviewer.agent.md     # @security-reviewer — read-only, PCI-focused review
@@ -35,8 +39,10 @@ repo's commits, local-only.
     pr-feedback.agent.md           # @pr-feedback — addresses PR review comments, re-validates
     merge-review.agent.md          # @merge-review — read-only, independent intent + guideline check before merge
     architecture-doc.agent.md      # @architecture-doc — architecture.md + docs/design/ + docs/decisions/, never source code
+    confluence-summarizer.agent.md # @confluence-summarizer — read-only, condenses a doc for Confluence, never edits the source
   skills/
     session-recovery/SKILL.md      # docs/progress.md crash-recovery pattern
+    context-hygiene/SKILL.md       # proxy signals for a heavy session + checkpoint-and-restart protocol
     architecture-docs/SKILL.md     # methodology: 12-section template, reliability math, when to write a detailed design/ADR
       references/architecture-template.md
       references/detailed-design-template.md
@@ -52,11 +58,12 @@ repo's commits, local-only.
     ci.yml                          # outer loop — same checks, server-side, independent of local hooks
 docs/
   progress.md                      # RESUME_POINT log, used by session-recovery
+  progress.md.<timestamp>          # archived history, written by session-recovery once progress.md fills up
   architecture.md                  # 12-section system summary — generated/maintained, not hand-authored
   design/                          # detailed design docs, linked from architecture.md §12
   decisions/                       # ADRs, linked from architecture.md §11
 scripts/
-  setup-project.sh                 # gitignore + untrack .github/ (except workflows/) + docs/progress.md
+  setup-project.sh                 # gitignore + untrack .github/ (except workflows/) + docs/progress.md(.*)
 ```
 
 ## What works where
@@ -81,15 +88,17 @@ Two things worth being deliberate about:
   in a prompt or agent file.
 - **Prompt files don't work in Copilot CLI at all** — and CLI is the
   *only* surface where the commit-time hooks in this scaffold actually
-  fire. That means from Copilot CLI, none of `/plan`, `/validate`,
-  `/pre-pr-review`, `/security-review`, `/pr-feedback`, `/merge-review`,
-  `/retro`, `/new-endpoint`, or `/session-resume` work as slash commands
-  — but the underlying agents they're bound to (`@planner`,
-  `@quality-gate`, etc.) are still supported there. From CLI, invoke the
-  agent directly (or just describe the task — the relevant
-  `instructions/*.md` still auto-apply) instead of reaching for the
-  `/command`. JetBrains is the mirror case: prompt files and agents work
-  there (in preview) even though the hooks don't.
+  fire. That means from Copilot CLI, none of `/plan`, `/plan-from-jira`,
+  `/validate`, `/pre-pr-review`, `/security-review`, `/pr-feedback`,
+  `/merge-review`, `/retro`, `/new-endpoint`, `/session-resume`,
+  `/checkpoint`, or `/summarize-for-confluence` work as slash commands
+  — but the
+  underlying agents they're bound to (`@planner`, `@quality-gate`, etc.)
+  are still supported there. From CLI, invoke the agent directly (or
+  just describe the task — the relevant `instructions/*.md` still
+  auto-apply) instead of reaching for the `/command`. JetBrains is the
+  mirror case: prompt files and agents work there (in preview) even
+  though the hooks don't.
 
 ## Workflow: plan → implement → validate → pre-PR review → PR feedback → merge review
 
@@ -145,6 +154,15 @@ For anything under `payment/card/auth/pci`, also run `/security-review`
 (`@security-reviewer`) — orthogonal to the steps above, not a
 replacement for any of them.
 
+**Jira-sourced work:** when the request starts from a Jira ticket
+rather than a direct ask, use `/plan-from-jira` (`@jira-planner`) in
+place of `/plan` for step 1. It reads the ticket, brainstorms where it's
+ambiguous or silent relative to the actual codebase, and asks the
+operator targeted clarifying questions — waiting for answers — before
+writing the plan, specifically so the plan isn't built on an assumption
+the ticket never actually stated. From there it hands off into the same
+implement → validate → review pipeline as `/plan`.
+
 The mechanical parts of this (build, tests, secrets) are also enforced
 at commit time by the `preToolUse` hooks, and again server-side by the
 CI workflow (see below) — `/validate` and `/pre-pr-review` are the
@@ -189,14 +207,26 @@ Two different kinds of documentation, deliberately handled differently:
   something actually found in the code or actually decided — no invented
   dependencies, guessed SLA numbers, or retroactive ADR rationale.
 
+## Sharing docs outside the repo: Confluence summaries
+
+`/summarize-for-confluence` (`@confluence-summarizer`) is a standalone
+utility, not part of the plan → implement → validate pipeline above. It
+reads an *already-written* `docs/architecture.md`, `docs/design/*.md`,
+or `docs/decisions/*.md` and condenses it into a short, Confluence-ready
+Markdown page (title, one-paragraph summary, body sections, a source
+line back to the repo) — for pasting into Confluence's editor, which
+auto-converts Markdown on paste. It never generates or edits the source
+doc (that's `architecture-doc`) and has no upload/publish access itself
+— it hands back Markdown for a human to paste and publish.
+
 ## Keeping the scaffold out of the target repo's commits
 
 `scripts/setup-project.sh` gitignores `.github/` (except
-`.github/workflows/` — see below) and `docs/progress.md` in whatever repo
-you run it from (updates `.gitignore`, and untracks any of those paths
-from git's index if already added or committed — without touching the
-files on disk). Run it after copying this scaffold into your real
-project:
+`.github/workflows/` — see below), `docs/progress.md`, and its dated
+archives (`docs/progress.md.<timestamp>`) in whatever repo you run it
+from (updates `.gitignore`, and untracks any of those paths from git's
+index if already added or committed — without touching the files on
+disk). Run it after copying this scaffold into your real project:
 
 ```bash
 # from the root of your target project, after copying .github/ and
@@ -363,3 +393,21 @@ no longer exists).
 For work spanning multiple sessions, see `.github/skills/session-recovery/SKILL.md`
 and `docs/progress.md`. Invoke `/session-resume` at the start of a new
 session on ongoing work.
+
+**Proactive checkpointing (context hygiene).** `session-recovery` above
+is reactive — it's for resuming after a crash or a deliberate pause.
+`.github/skills/context-hygiene/SKILL.md` is the proactive counterpart:
+response quality tends to degrade as a session's context gets long and
+cluttered, well before any hard limit is hit, so waiting for a crash to
+checkpoint is waiting too long. There's no tool exposed to the model
+that reports actual token/context-window usage, so this works off proxy
+signals instead — session length, how much tool output has piled up,
+and the agent noticing its own drift (re-reading something it already
+read this session, re-deriving an earlier decision) — rather than a
+precise percentage. `java-pair` self-checks these at natural task
+boundaries (end of a plan step) without being asked; run `/checkpoint`
+explicitly any time to ask for that assessment on demand. Either way,
+checkpointing writes the same `RESUME_POINT` format `session-recovery`
+already uses to `docs/progress.md` — the agent can't clear its own
+context (only the operator opening a new chat can), so the loop ends
+with it telling you to start a fresh chat and run `/session-resume`.
